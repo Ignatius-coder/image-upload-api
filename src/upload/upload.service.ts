@@ -1,37 +1,44 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
-import * as fs from 'fs';
-// Import necessary modules: Injectable from NestJS, Cloudinary SDK, and filesystem module
 
 @Injectable()
 export class UploadService {
   constructor() {
+    
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_NAME,
       api_key: process.env.CLOUDINARY_KEY,
       api_secret: process.env.CLOUDINARY_SECRET,
     });
   }
-  // Configure Cloudinary with credentials from environment variables
-  // This setup is done in the constructor of the service
 
- 
-  async uploadToCloudinary(file: Express.Multer.File) {
-  try {
-    const result = await new Promise((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        { folder: 'nest_uploads' },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
-        },
-      ).end(file.buffer); // ✅ use buffer instead of file.path
-    });
-         return { url: (result as any).secure_url };
-    } catch (error) {
-      throw new Error('Cloudinary upload failed: ' + error.message);
+  async uploadToCloudinary(file: Express.Multer.File): Promise<{ url: string }> {
+    if (!file || !file.buffer) {
+      throw new HttpException('No file buffer received', HttpStatus.BAD_REQUEST);
     }
-    // Handles any errors that occur during the upload process
+
+    try {
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
+          { folder: 'nest_uploads' },
+          (error, result) => {
+            if (error) {
+              console.error('Cloudinary error:', error);
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          },
+        ).end(file.buffer);
+      });
+
+      return { url: (result as any).secure_url };
+    } catch (error) {
+      console.error('Upload failed:', error);
+      throw new HttpException(
+        'Cloudinary upload failed: ' + error.message,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
-
