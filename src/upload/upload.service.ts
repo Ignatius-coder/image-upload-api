@@ -1,37 +1,32 @@
-import { Injectable } from '@nestjs/common';
-import { v2 as cloudinary } from 'cloudinary';
-import * as fs from 'fs';
-// Import necessary modules: Injectable from NestJS, Cloudinary SDK, and filesystem module
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
+import * as streamifier from 'streamifier';
 
 @Injectable()
 export class UploadService {
-  constructor() {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_NAME,
-      api_key: process.env.CLOUDINARY_KEY,
-      api_secret: process.env.CLOUDINARY_SECRET,
-    });
-  }
-  // Configure Cloudinary with credentials from environment variables
-  // This setup is done in the constructor of the service
+  private readonly logger = new Logger(UploadService.name);
 
- 
-  async uploadToCloudinary(file: Express.Multer.File) {
-  try {
-    const result = await new Promise((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        { folder: 'nest_uploads' },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
-        },
-      ).end(file.buffer); // ✅ use buffer instead of file.path
-    });
-         return { url: (result as any).secure_url };
-    } catch (error) {
-      throw new Error('Cloudinary upload failed: ' + error.message);
+  async uploadToCloudinary(file: Express.Multer.File): Promise<{ url: string }> {
+    if (!file || !file.buffer) {
+      this.logger.error('No file buffer found');
+      throw new InternalServerErrorException('Invalid file upload');
     }
-    // Handles any errors that occur during the upload process
+
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { folder: 'uploads' },
+        (error: any, result?: UploadApiResponse) => {
+          if (error || !result) {
+            this.logger.error('Cloudinary upload failed', error);
+            reject(new InternalServerErrorException('Cloudinary upload failed'));
+          } else {
+            this.logger.log(`Upload successful: ${result.secure_url}`);
+            resolve({ url: result.secure_url }); // ✅ use secure_url
+          }
+        },
+      );
+
+      streamifier.createReadStream(file.buffer).pipe(uploadStream);
+    });
   }
 }
-
